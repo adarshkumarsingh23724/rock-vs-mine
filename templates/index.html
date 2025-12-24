@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tactical Sonar Command</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    <style>
+        :root {
+            --vibrant-blue: #00d4ff;
+            --panel-bg: rgba(2, 11, 18, 0.95);
+            --pure-black: #020b12;
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; min-height: 100%;
+            background-color: var(--pure-black);
+            font-family: 'Roboto', sans-serif;
+            color: white;
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        #particles-js { position: fixed; width: 100%; height: 100%; z-index: 1; }
+
+        .dashboard {
+            position: relative; z-index: 10;
+            background: var(--panel-bg);
+            width: 95%; max-width: 900px;
+            padding: 20px;
+            border: 1px solid var(--vibrant-blue);
+            display: grid; 
+            grid-template-columns: 1fr 1.2fr; 
+            gap: 20px;
+            box-shadow: 0 0 40px rgba(0, 212, 255, 0.2);
+            margin: 20px;
+            box-sizing: border-box;
+        }
+
+        /* Mobile Layout Adjustment */
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr; /* Stack columns vertically */
+                width: 95%;
+                padding: 15px;
+                margin: 10px;
+            }
+            
+            h1 { font-size: 1.1rem !important; }
+            
+            textarea { height: 100px !important; }
+            
+            .controls { grid-template-columns: 1fr !important; } /* Single column buttons */
+        }
+
+        .header {
+            grid-column: 1 / -1; display: flex; justify-content: space-between;
+            border-bottom: 1px solid var(--vibrant-blue); padding-bottom: 10px;
+            align-items: center;
+        }
+
+        h1 { font-size: 1.4rem; letter-spacing: 2px; color: var(--vibrant-blue); margin: 0; font-weight: 900; }
+
+        textarea {
+            width: 100%; height: 140px; background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #113a42; color: var(--vibrant-blue);
+            padding: 10px; font-family: 'Courier New', monospace; font-size: 10px;
+            margin-bottom: 5px; resize: none; outline: none; box-sizing: border-box;
+        }
+
+        .status-bar {
+            font-size: 10px; font-weight: 900; margin-bottom: 15px;
+            display: flex; justify-content: space-between; color: #2e5a63;
+        }
+
+        .status-bar.valid { color: #00ffcc; text-shadow: 0 0 5px #00ffcc; }
+
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        
+        button {
+            font-family: 'Roboto'; font-weight: 700; text-transform: uppercase;
+            padding: 12px; cursor: pointer; border: none; transition: 0.3s;
+            font-size: 0.8rem;
+        }
+
+        .btn-main { background: var(--vibrant-blue); color: #000; font-weight: 900; }
+        .btn-sub { background: #001a21; color: var(--vibrant-blue); border: 1px solid #004d5c; }
+        .btn-reset { background: #1a0000; color: #ff3131; border: 1px solid #4d0000; grid-column: 1 / -1; padding: 8px; font-size: 0.7rem; }
+        
+        button:hover:not(:disabled) { background: #fff; color: #000; }
+        button:disabled { opacity: 0.1; cursor: not-allowed; }
+
+        .result-box {
+            margin-top: 15px; padding: 15px; border: 1px solid var(--vibrant-blue);
+            text-align: center; font-weight: 900; background: rgba(0, 212, 255, 0.1);
+            color: var(--vibrant-blue); font-size: 0.9rem;
+        }
+
+        .viz-panel { width: 100%; overflow: hidden; }
+        canvas { background: rgba(0, 10, 15, 0.9); border: 1px solid #113a42; width: 100% !important; height: auto !important; }
+    </style>
+</head>
+<body>
+
+<div id="particles-js"></div>
+
+<div class="dashboard">
+    <div class="header">
+        <h1>SONAR CMD</h1>
+        <div id="system-mode" style="color: var(--vibrant-blue); font-size: 10px;">[ STANDBY ]</div>
+    </div>
+
+    <div class="input-panel">
+        <form action="/predict" method="POST">
+            <textarea id="dataInput" name="features" placeholder="AWAITING PROBE DATA..."></textarea>
+            <div id="statusBar" class="status-bar">
+                <span id="pointCount">SAMPLES: 0 / 60</span>
+                <span id="validText"></span>
+            </div>
+            
+            <div class="controls">
+                <button type="button" class="btn-sub" onclick="initiateProbe()">Probe</button>
+                <button type="submit" id="execBtn" class="btn-main" disabled>Analyze</button>
+                <button type="button" class="btn-reset" onclick="resetSystem()">Reset</button>
+            </div>
+        </form>
+
+        {% if prediction_text %}
+        <div class="result-box">CLASS: {{ prediction_text }}</div>
+        {% endif %}
+    </div>
+
+    <div class="viz-panel">
+        <canvas id="liveChart"></canvas>
+    </div>
+</div>
+
+<script>
+    particlesJS("particles-js", {"particles":{"number":{"value":30},"color":{"value":"#00d4ff"},"opacity":{"value":0.3},"size":{"value":2},"line_linked":{"enable":true,"distance":100,"color":"#00d4ff","opacity":0.2},"move":{"enable":true,"speed":1}}});
+
+    const ctx = document.getElementById('liveChart').getContext('2d');
+    let chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: Array.from({length: 60}, (_, i) => i),
+            datasets: [{ data: [], borderColor: '#00d4ff', borderWidth: 2, pointRadius: 0, fill: true, backgroundColor: 'rgba(0, 212, 255, 0.1)', tension: 0.4 }]
+        },
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: true,
+            aspectRatio: 2,
+            plugins: { legend: { display: false } }, 
+            scales: { x: { display: false }, y: { min: 0, max: 1, grid: { color: '#001a21' } } } 
+        }
+    });
+
+    const input = document.getElementById('dataInput');
+    const execBtn = document.getElementById('execBtn');
+    const pointCount = document.getElementById('pointCount');
+    const validText = document.getElementById('validText');
+
+    function initiateProbe() {
+        let values = [];
+        const isMinePattern = Math.random() > 0.5;
+        for (let i = 0; i < 60; i++) {
+            let val = isMinePattern ? 
+                ((i > 15 && i < 45) ? Math.sin((i-15)*0.1)*0.5 + (Math.random() * 0.2) : 0.05 + (Math.random() * 0.1)) : 
+                (Math.random() * 0.4);
+            values.push(Math.max(0.01, Math.min(0.99, val)).toFixed(4));
+        }
+        input.value = values.join(',');
+        updateInterface();
+    }
+
+    function updateInterface() {
+        const values = input.value.split(',').filter(v => v.trim() !== "").map(Number);
+        pointCount.innerText = `SAMPLES: ${values.length} / 60`;
+        if (values.length === 60) {
+            chart.data.datasets[0].data = values;
+            chart.update();
+            execBtn.disabled = false;
+            document.getElementById('statusBar').className = "status-bar valid";
+            validText.innerText = "LOCKED";
+            document.getElementById('system-mode').innerText = "[ LOCKED ]";
+        } else {
+            execBtn.disabled = true;
+            document.getElementById('statusBar').className = "status-bar";
+            validText.innerText = "";
+        }
+    }
+
+    function resetSystem() {
+        input.value = "";
+        chart.data.datasets[0].data = [];
+        chart.update();
+        updateInterface();
+        document.getElementById('system-mode').innerText = "[ STANDBY ]";
+    }
+
+    input.addEventListener('input', updateInterface);
+</script>
+</body>
+</html>
